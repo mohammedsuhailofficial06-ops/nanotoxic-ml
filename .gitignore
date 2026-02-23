@@ -4,3 +4,5 @@ _pycache_/
 build/
 .flutter-plugins*
 *.pkl
+.vercel
+.env*.local
