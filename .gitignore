@@ -1,0 +1,6 @@
+venv/
+_pycache_/
+.dart_tool/
+build/
+.flutter-plugins*
+*.pkl
