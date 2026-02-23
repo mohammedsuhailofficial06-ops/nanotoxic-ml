@@ -71,7 +71,7 @@ def predict_tox(data: NanoData):
     }
 
 # 4. Critical: Dynamic Port Binding for Render
-if _name_ == "_main_":
+if __name__ == "__main__":
     import uvicorn
     # Render provides the PORT environment variable automatically
     port = int(os.environ.get("PORT", 10000))
