@@ -16,8 +16,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. Robust Path Handling (Fixed the double underscore typo)
-BASE_DIR = os.path.dirname(os.path.abspath(_file_))
+# 2. Robust Path Handling (Corrected to _file_ with double underscores)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(BASE_DIR, 'nano_model.pkl')
 
 try:
@@ -57,7 +57,7 @@ def predict_tox(data: NanoData):
     
     df_input = pd.DataFrame(input_dict)
     
-    # Generate Predictions with Confidence
+    # Generate Predictions with Confidence Analytics
     probs = model.predict_proba(df_input)[0] 
     prediction = model.predict(df_input)[0]
     
