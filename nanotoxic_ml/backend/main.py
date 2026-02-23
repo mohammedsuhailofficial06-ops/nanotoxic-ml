@@ -4,21 +4,20 @@ import joblib
 import pandas as pd
 from fastapi.middleware.cors import CORSMiddleware
 
-# 1. Initialize the App
 app = FastAPI()
 
-# 2. Enable CORS (This allows your Flutter Web app to talk to this Python server)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False, # Change this to False
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# 3. Load the AI Brain
-model = joblib.load('nano_model.pkl')
 
-# 4. Define the input structure
+]import os
+# This finds the absolute path to your model file
+model_path = os.path.join(os.path.dirname(_file_), 'nano_model.pkl')
+model = joblib.load(model_path)
+
 class NanoData(BaseModel):
     core_material: str
     size_nm: float
@@ -27,11 +26,10 @@ class NanoData(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"message": "NanoToxic-ML API is Online"}
+    return {"message": "NanoToxic-ML API is Online", "version": "2.0-Research"}
 
 @app.post("/predict")
 def predict_tox(data: NanoData):
-    # This prepares the data exactly like the training CSV
     input_dict = {
         'size_nm': [data.size_nm],
         'zeta_potential_mv': [data.zeta_potential_mv],
@@ -44,6 +42,16 @@ def predict_tox(data: NanoData):
     }
     
     df_input = pd.DataFrame(input_dict)
-    prediction = model.predict(df_input)
     
-    return {"prediction": "Toxic" if prediction[0] == 1 else "Safe"}
+    # NEW: Get probability scores
+    probs = model.predict_proba(df_input)[0] 
+    prediction = model.predict(df_input)[0]
+    
+    confidence = max(probs) * 100
+    result = "Toxic" if prediction == 1 else "Safe"
+    
+    return {
+        "prediction": result,
+        "confidence": f"{confidence:.2f}%",
+        "methodology": "Random Forest Classifier (Nano-QSAR)"
+    }
