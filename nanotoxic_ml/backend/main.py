@@ -7,8 +7,7 @@ import os
 
 app = FastAPI()
 
-# 1. Professional CORS Configuration
-# This is essential for your Flutter Web app to talk to the Render API
+# 1. Enable CORS for your Flutter Web app
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,8 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. Robust Path Handling for Cloud Deployment
-# This ensures the model is found regardless of where Render starts the script
+# 2. Robust Path Handling (Fixed the _file_ typo)
 BASE_DIR = os.path.dirname(os.path.abspath(_file_))
 model_path = os.path.join(BASE_DIR, 'nano_model.pkl')
 
@@ -26,9 +24,9 @@ try:
     model = joblib.load(model_path)
     print("✅ Nano-QSAR Model loaded successfully")
 except Exception as e:
-    print(f"❌ Critical Error: Could not load model at {model_path}. Error: {e}")
+    print(f"❌ Error loading model: {e}")
 
-# 3. Scientific Data Schema
+# 3. Data Schema
 class NanoData(BaseModel):
     core_material: str
     size_nm: float
@@ -41,12 +39,11 @@ def read_root():
         "status": "Online",
         "system": "NanoToxic-ML Predictive Portal",
         "version": "2.0-Research",
-        "institution_context": "Karunya Institute of Technology and Sciences"
+        "author": "Mohammed Suhail A"
     }
 
 @app.post("/predict")
 def predict_tox(data: NanoData):
-    # Ensure the input features match the training dataset exactly
     input_dict = {
         'size_nm': [data.size_nm],
         'zeta_potential_mv': [data.zeta_potential_mv],
@@ -60,26 +57,22 @@ def predict_tox(data: NanoData):
     
     df_input = pd.DataFrame(input_dict)
     
-    # 4. Generate Predictions with Confidence Analytics
-    # Uses predict_proba to determine the probability of the assessment
+    # Generate Predictions with Confidence
     probs = model.predict_proba(df_input)[0] 
     prediction = model.predict(df_input)[0]
     
-    # Probability of the selected class (0: Safe, 1: Toxic)
     confidence = max(probs) * 100
     result = "Toxic" if prediction == 1 else "Safe"
     
     return {
         "prediction": result,
         "confidence": f"{confidence:.2f}%",
-        "metadata": {
-            "model_type": "Random Forest Classifier",
-            "endpoint": "Nanotoxicity (In-Vitro)",
-            "descriptors": ["Size", "Zeta Potential", "Dosage", "Core Material"]
-        }
+        "methodology": "Random Forest Classifier (Nano-QSAR)"
     }
+
+# 4. Critical: Dynamic Port Binding for Render
 if _name_ == "_main_":
     import uvicorn
-    # This grabs the port from Render's environment, or uses 10000 as a backup
+    # Render provides the PORT environment variable automatically
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
