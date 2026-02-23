@@ -16,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. Robust Path Handling (Fixed the _file_ typo)
+# 2. Robust Path Handling (Fixed the double underscore typo)
 BASE_DIR = os.path.dirname(os.path.abspath(_file_))
 model_path = os.path.join(BASE_DIR, 'nano_model.pkl')
 
