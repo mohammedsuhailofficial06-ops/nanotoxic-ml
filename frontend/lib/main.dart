@@ -34,17 +34,19 @@ class _DashboardState extends State<Dashboard> {
   double _size = 50;
   double _zeta = 0;
   double _dosage = 50;
+  // Standardized naming to match backend Random Forest logic
   String _material = 'Gold';
 
   Future<void> _runAnalysis() async {
     setState(() {
       _isLoading = true;
       _result = "Running ML Inference...";
+      _confidence = "";
     });
     
     try {
       final response = await http.post(
-        Uri.parse('https://nanotoxic-api.onrender.com/predict/'),
+        Uri.parse('https://nanotoxic-api.onrender.com/predict'),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "core_material": _material,
@@ -52,24 +54,30 @@ class _DashboardState extends State<Dashboard> {
           "zeta_potential_mv": _zeta,
           "dosage_ug_ml": _dosage
         }),
-      );
+      ).timeout(const Duration(seconds: 15)); // Prevents infinite hanging
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
           _result = "SYSTEM ASSESSMENT: ${data['prediction'].toString().toUpperCase()}";
-          _confidence = "Confidence: ${data['confidence']}";
+          _confidence = "Confidence Score: ${data['confidence']}";
           _resultColor = data['prediction'] == "Toxic" ? Colors.redAccent : Colors.greenAccent;
-          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _result = "SERVER ERROR: ${response.statusCode}";
+          _confidence = "API is awake but rejected the request.";
+          _resultColor = Colors.orange;
         });
       }
     } catch (e) {
       setState(() {
         _result = "ERROR: Connection Timeout";
-        _confidence = "Check if Render API is sleeping";
+        _confidence = "Check if Render API is sleeping or URL is wrong.";
         _resultColor = Colors.orange;
-        _isLoading = false;
       });
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -92,7 +100,9 @@ class _DashboardState extends State<Dashboard> {
                     DropdownButtonFormField<String>(
                       value: _material,
                       decoration: InputDecoration(labelText: "Nanoparticle Core"),
-                      items: ['Gold', 'Silver', 'ZincOxide', 'Silica', 'IronOxide'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                      items: ['Gold', 'Silver', 'ZincOxide', 'Silica', 'IronOxide']
+                          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                          .toList(),
                       onChanged: (val) => setState(() => _material = val!),
                     ),
                     SizedBox(height: 25),
@@ -107,7 +117,7 @@ class _DashboardState extends State<Dashboard> {
                         minimumSize: Size(double.infinity, 55),
                       ),
                       child: _isLoading 
-                        ? CircularProgressIndicator(color: Colors.white) 
+                        ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
                         : Text("GENERATE PREDICTION", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                     ),
                     SizedBox(height: 40),
@@ -121,7 +131,7 @@ class _DashboardState extends State<Dashboard> {
                       child: Column(
                         children: [
                           Text(_result, textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _resultColor)),
-                          Text(_confidence, style: TextStyle(fontSize: 14, color: Colors.white60)),
+                          if (_confidence.isNotEmpty) Text(_confidence, style: TextStyle(fontSize: 14, color: Colors.white60)),
                         ],
                       ),
                     ),
