@@ -5,11 +5,10 @@ import 'dart:convert';
 void main() => runApp(NanoToxApp());
 
 class NanoToxApp extends StatelessWidget {
-  const NanoToxApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'NanoToxic-ML',
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -22,15 +21,15 @@ class NanoToxApp extends StatelessWidget {
 }
 
 class Dashboard extends StatefulWidget {
-  const Dashboard({super.key});
-
   @override
   _DashboardState createState() => _DashboardState();
 }
 
 class _DashboardState extends State<Dashboard> {
-  String _result = "Enter parameters and scan";
+  String _result = "Adjust parameters and scan";
+  String _confidence = "";
   Color _resultColor = Colors.white70;
+  bool _isLoading = false;
   
   double _size = 50;
   double _zeta = 0;
@@ -38,11 +37,14 @@ class _DashboardState extends State<Dashboard> {
   String _material = 'Gold';
 
   Future<void> _runAnalysis() async {
-    setState(() => _result = "Running ML Inference...");
+    setState(() {
+      _isLoading = true;
+      _result = "Running ML Inference...";
+    });
     
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:8000/predict'),
+        Uri.parse('https://nanotoxic-api.onrender.com/predict/'),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "core_material": _material,
@@ -56,13 +58,17 @@ class _DashboardState extends State<Dashboard> {
         final data = jsonDecode(response.body);
         setState(() {
           _result = "SYSTEM ASSESSMENT: ${data['prediction'].toString().toUpperCase()}";
+          _confidence = "Confidence: ${data['confidence']}";
           _resultColor = data['prediction'] == "Toxic" ? Colors.redAccent : Colors.greenAccent;
+          _isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
-        _result = "ERROR: Backend Offline";
+        _result = "ERROR: Connection Timeout";
+        _confidence = "Check if Render API is sleeping";
         _resultColor = Colors.orange;
+        _isLoading = false;
       });
     }
   }
@@ -70,7 +76,7 @@ class _DashboardState extends State<Dashboard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("🔬 NANOTOXIC-ML | PREDICTIVE PORTAL"), centerTitle: true),
+      appBar: AppBar(title: Text("🔬 NANOTOXIC-ML | RESEARCH PORTAL"), centerTitle: true),
       body: Center(
         child: SingleChildScrollView(
           child: Container(
@@ -84,7 +90,7 @@ class _DashboardState extends State<Dashboard> {
                 child: Column(
                   children: [
                     DropdownButtonFormField<String>(
-                      initialValue: _material,
+                      value: _material,
                       decoration: InputDecoration(labelText: "Nanoparticle Core"),
                       items: ['Gold', 'Silver', 'ZincOxide', 'Silica', 'IronOxide'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                       onChanged: (val) => setState(() => _material = val!),
@@ -95,18 +101,29 @@ class _DashboardState extends State<Dashboard> {
                     _buildSlider("Dosage: ${_dosage.toInt()} µg/mL", _dosage, 0, 500, (v) => setState(() => _dosage = v)),
                     SizedBox(height: 30),
                     ElevatedButton(
-                      onPressed: _runAnalysis,
+                      onPressed: _isLoading ? null : _runAnalysis,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal,
                         minimumSize: Size(double.infinity, 55),
                       ),
-                      child: Text("GENERATE PREDICTION", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                      child: _isLoading 
+                        ? CircularProgressIndicator(color: Colors.white) 
+                        : Text("GENERATE PREDICTION", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                     ),
                     SizedBox(height: 40),
                     Container(
+                      width: double.infinity,
                       padding: EdgeInsets.all(15),
-                      decoration: BoxDecoration(border: Border.all(color: _resultColor), borderRadius: BorderRadius.circular(10)),
-                      child: Text(_result, textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _resultColor)),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: _resultColor), 
+                        borderRadius: BorderRadius.circular(10)
+                      ),
+                      child: Column(
+                        children: [
+                          Text(_result, textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _resultColor)),
+                          Text(_confidence, style: TextStyle(fontSize: 14, color: Colors.white60)),
+                        ],
+                      ),
                     ),
                   ],
                 ),
