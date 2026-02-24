@@ -1,28 +1,13 @@
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import joblib
 import pandas as pd
+from fastapi.middleware.cors import CORSMiddleware
 import os
 
 app = FastAPI()
 
-# 1. THE "FORCE-BYPASS" MIDDLEWARE
-# This manually injects CORS headers into EVERY response, even if the app crashes.
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    if request.method == "OPTIONS":
-        response = JSONResponse(content="OK")
-    else:
-        response = await call_next(request)
-    
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS, DELETE, PUT"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
-    return response
-
-# 2. STANDARD CORS (Safety Backup)
+# 1. CORS HANDSHAKE
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,39 +16,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 3. ROBUST MODEL LOADING
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(BASE_DIR, 'nano_model.pkl')
-
-try:
-    # Ensure nano_model.pkl is in the same folder as this main.py
-    model = joblib.load(model_path)
-    print("✅ Nano-QSAR Model loaded successfully")
-except Exception as e:
-    print(f"❌ Model Error: {e}")
-    model = None
-
+# 2. DEFINE DATA SCHEMA
 class NanoData(BaseModel):
     core_material: str
     size_nm: float
     zeta_potential_mv: float
     dosage_ug_ml: float
 
+# 3. GLOBAL MODEL INITIALIZATION 
+# This ensures line 61 always has a 'model' variable to talk to.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(BASE_DIR, 'nano_model.pkl')
+
+# We initialize it as None first
+model = None
+
+if os.path.exists(model_path):
+    try:
+        model = joblib.load(model_path)
+        print("✅ Nano-QSAR Random Forest Model Loaded Successfully")
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+else:
+    print(f"❌ CRITICAL: {model_path} NOT FOUND. Ensure the .pkl file is in the backend folder.")
+
 @app.get("/")
 def read_root():
-    return {"status": "Online", "system": "NanoToxic-ML Predictive Portal"}
+    return {"status": "Online", "model_loaded": model is not None}
 
 @app.post("/predict")
 async def predict_tox(data: NanoData):
+    # This check prevents the NameError you were seeing
     if model is None:
-        return JSONResponse(
-            status_code=500, 
-            content={"error": "Model not loaded on server"},
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        raise HTTPException(status_code=500, detail="The ML model is not loaded on the server. Check backend logs.")
 
     try:
-        # Prepare input for Random Forest
+        # Prepare input for the Random Forest model
         input_dict = {
             'size_nm': [data.size_nm],
             'zeta_potential_mv': [data.zeta_potential_mv],
@@ -76,25 +64,15 @@ async def predict_tox(data: NanoData):
         }
         
         df_input = pd.DataFrame(input_dict)
-        probs = model.predict_proba(df_input)[0] 
-        prediction = model.predict(df_input)[0]
         
-        return JSONResponse(
-            content={
-                "prediction": "Toxic" if prediction == 1 else "Safe",
-                "confidence": f"{(max(probs) * 100):.2f}%",
-                "methodology": "Random Forest Classifier"
-            },
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        # Line 61: Now 'model' is guaranteed to be defined
+        prediction = model.predict(df_input)[0]
+        probs = model.predict_proba(df_input)[0]
+        
+        return {
+            "prediction": "Toxic" if prediction == 1 else "Safe",
+            "confidence": f"{(max(probs) * 100):.2f}%",
+            "analysis": "Random Forest Classification"
+        }
     except Exception as e:
-        return JSONResponse(
-            status_code=500, 
-            content={"error": str(e)},
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
-
-if _name_ == "_main_":
-    import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+        raise HTTPException(status_code=500, detail=f"Inference Error: {str(e)}")
