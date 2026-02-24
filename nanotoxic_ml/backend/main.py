@@ -1,36 +1,48 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import joblib
 import pandas as pd
-from fastapi.middleware.cors import CORSMiddleware
 import os
 
-# Initialize the app
 app = FastAPI()
 
+# 1. THE "FORCE-BYPASS" MIDDLEWARE
+# This manually injects CORS headers into EVERY response, even if the app crashes.
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    if request.method == "OPTIONS":
+        response = JSONResponse(content="OK")
+    else:
+        response = await call_next(request)
+    
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS, DELETE, PUT"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    return response
+
+# 2. STANDARD CORS (Safety Backup)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
-# 2. ROBUST MODEL LOADING
-# Using absolute paths to ensure Render finds your 'nano_model.pkl'.
+# 3. ROBUST MODEL LOADING
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(BASE_DIR, 'nano_model.pkl')
 
 try:
-    # Ensure nano_model.pkl is in the same folder as this main.py in GitHub
+    # Ensure nano_model.pkl is in the same folder as this main.py
     model = joblib.load(model_path)
     print("✅ Nano-QSAR Model loaded successfully")
 except Exception as e:
-    print(f"❌ CRITICAL ERROR: Could not load model file at {model_path}. Error: {e}")
+    print(f"❌ Model Error: {e}")
     model = None
 
-# 3. DATA SCHEMA (Matches your Flutter UI)
 class NanoData(BaseModel):
     core_material: str
     size_nm: float
@@ -39,22 +51,19 @@ class NanoData(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {
-        "status": "Online",
-        "system": "NanoToxic-ML Predictive Portal",
-        "version": "2.0-Research",
-        "author": "Mohammed Suhail A"
-    }
+    return {"status": "Online", "system": "NanoToxic-ML Predictive Portal"}
 
 @app.post("/predict")
 async def predict_tox(data: NanoData):
-    # Safety check: If model failed to load, don't let the server crash
     if model is None:
-        raise HTTPException(status_code=500, detail="Machine Learning model is not loaded on the server.")
+        return JSONResponse(
+            status_code=500, 
+            content={"error": "Model not loaded on server"},
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
 
     try:
-        # Prepare the input for your Random Forest model
-        # The keys must match the feature names used during your training
+        # Prepare input for Random Forest
         input_dict = {
             'size_nm': [data.size_nm],
             'zeta_potential_mv': [data.zeta_potential_mv],
@@ -67,26 +76,25 @@ async def predict_tox(data: NanoData):
         }
         
         df_input = pd.DataFrame(input_dict)
-        
-        # 4. SCIENTIFIC INFERENCE
-        # We use predict_proba to get the statistical confidence for the research score
         probs = model.predict_proba(df_input)[0] 
         prediction = model.predict(df_input)[0]
         
-        confidence = max(probs) * 100
-        result = "Toxic" if prediction == 1 else "Safe"
-        
-        return {
-            "prediction": result,
-            "confidence": f"{confidence:.2f}%",
-            "methodology": "Random Forest Classifier (Nano-QSAR)"
-        }
-        
+        return JSONResponse(
+            content={
+                "prediction": "Toxic" if prediction == 1 else "Safe",
+                "confidence": f"{(max(probs) * 100):.2f}%",
+                "methodology": "Random Forest Classifier"
+            },
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Inference Error: {str(e)}")
+        return JSONResponse(
+            status_code=500, 
+            content={"error": str(e)},
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
 
 if _name_ == "_main_":
     import uvicorn
-    # Render uses the PORT environment variable
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
